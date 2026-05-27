@@ -61,3 +61,18 @@ export const dedupeSearchResults = (items: NormalizedSearchResult[]): Normalized
     return true;
   });
 };
+
+export const extractSearchItems = (payload: unknown): TurathSearchRawItem[] => {
+  if (Array.isArray(payload)) return payload as TurathSearchRawItem[];
+  if (!payload || typeof payload !== "object") return [];
+  const obj = payload as Record<string, unknown>;
+  if (Array.isArray(obj.results)) return obj.results as TurathSearchRawItem[];
+  if (Array.isArray(obj.data)) return obj.data as TurathSearchRawItem[];
+  return [];
+};
+
+export const extractSearchCount = (payload: unknown, fallback: number): number => {
+  if (!payload || typeof payload !== "object") return fallback;
+  const obj = payload as Record<string, unknown>;
+  return typeof obj.count === "number" ? obj.count : fallback;
+};
