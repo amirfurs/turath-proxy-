@@ -1,140 +1,634 @@
 openapi: 3.1.0
 info:
-  title: Turath GPT Proxy
-  version: 1.0.0
+  title: Turath GPT Proxy API
+  version: 1.1.0
+  description: >
+    Smart proxy between GPT Actions and Turath API. This API is intentionally constrained:
+    it never returns the full large index payload in one response and provides chunked/filterable
+    index and text access for reliable assistant workflows.
+servers:
+  - url: https://turath-gpt-proxy.onrender.com
+    description: Production
+tags:
+  - name: health
+  - name: books
+  - name: search
+  - name: index
+  - name: authors
 paths:
   /health:
     get:
+      tags: [health]
       operationId: getHealth
+      summary: Health check
       responses:
         "200":
-          description: ok
+          description: Service is healthy
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /books/search:
     get:
+      tags: [books]
       operationId: searchBooksByTitle
+      summary: Find books by title signal only
+      description: >
+        Uses Turath search internally and aggregates results by book metadata.
+        Returns book-level matches only (no raw text/snippets).
       parameters:
-        - in: query
-          name: q
+        - name: q
+          in: query
           required: true
-          schema: { type: string }
-        - in: query
-          name: limit
-          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
-      responses: { "200": { description: ok } }
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        "200":
+          description: Ranked list of candidate books
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookSearchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "504":
+          $ref: "#/components/responses/UpstreamTimeout"
   /search/text:
     get:
+      tags: [search]
       operationId: searchTextPaged
+      summary: Search inside text with pagination and deduplication
       parameters:
-        - in: query
-          name: q
+        - name: q
+          in: query
           required: true
-          schema: { type: string }
-      responses: { "200": { description: ok } }
+          schema:
+            type: string
+            minLength: 1
+        - name: book_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: author_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Upstream sort passthrough (for example page_id)
+      responses:
+        "200":
+          description: Deduplicated text search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TextSearchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "504":
+          $ref: "#/components/responses/UpstreamTimeout"
   /books/{book_id}/pages/{page}:
     get:
+      tags: [books]
       operationId: getBookPage
+      summary: Fetch a single page by book id and page number
       parameters:
-        - in: path
-          name: book_id
+        - name: book_id
+          in: path
           required: true
-          schema: { type: integer }
-        - in: path
-          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - name: page
+          in: path
           required: true
-          schema: { type: integer }
-      responses: { "200": { description: ok } }
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Book page payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookPageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "504":
+          $ref: "#/components/responses/UpstreamTimeout"
   /books/{book_id}/index/top:
     get:
+      tags: [index]
       operationId: getBookTopIndex
-      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: "#/components/schemas/IndexTopResponse" } } } } }
+      summary: Return top-level index headings only
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: max_level
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Filtered top headings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndexTopResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "504":
+          $ref: "#/components/responses/UpstreamTimeout"
   /books/{book_id}/index/search:
     get:
+      tags: [index]
       operationId: searchBookIndex
-      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: "#/components/schemas/IndexSearchResponse" } } } } }
+      summary: Search within book index headings
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: max_level
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        "200":
+          description: Ranked index matches
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndexSearchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "504":
+          $ref: "#/components/responses/UpstreamTimeout"
   /books/{book_id}/index/chunk:
     get:
+      tags: [index]
       operationId: getBookIndexChunk
-      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: "#/components/schemas/IndexChunkResponse" } } } } }
+      summary: Browse index in bounded chunks
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: max_level
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+      responses:
+        "200":
+          description: Chunked index payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndexChunkResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "504":
+          $ref: "#/components/responses/UpstreamTimeout"
   /books/{book_id}/index/window:
     get:
+      tags: [index]
       operationId: getBookIndexWindow
-      responses: { "200": { description: ok, content: { application/json: { schema: { $ref: "#/components/schemas/IndexWindowResponse" } } } } }
+      summary: Get current and surrounding headings around a page
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: page
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 30
+            default: 5
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 30
+            default: 5
+      responses:
+        "200":
+          description: Heading window around target page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IndexWindowResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "504":
+          $ref: "#/components/responses/UpstreamTimeout"
   /authors/{author_id}:
     get:
+      tags: [authors]
       operationId: getAuthorInfo
-      responses: { "200": { description: ok } }
+      summary: Fetch author metadata
+      parameters:
+        - name: author_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Author data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "504":
+          $ref: "#/components/responses/UpstreamTimeout"
 components:
+  responses:
+    BadRequest:
+      description: Invalid request input
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: Invalid params
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: NOT_FOUND
+              message: Resource not found
+    UpstreamError:
+      description: Upstream Turath error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: TURATH_UPSTREAM_ERROR
+              message: Failed to fetch data from Turath API
+    UpstreamTimeout:
+      description: Upstream Turath timeout
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: TURATH_TIMEOUT
+              message: Turath API timeout
+    InternalError:
+      description: Unexpected internal error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: Unexpected error
   schemas:
     HealthResponse:
       type: object
       properties:
-        ok: { type: boolean }
+        ok:
+          type: boolean
       required: [ok]
+    ErrorBody:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required: [code, message]
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+      required: [error]
     Heading:
       type: object
       properties:
-        title: { type: string }
-        page: { type: integer }
-        level: { type: integer }
+        title:
+          type: string
+        page:
+          type: integer
+        level:
+          type: integer
         breadcrumb:
           type: array
-          items: { type: string }
+          items:
+            type: string
       required: [title, page, level]
+    BookSearchItem:
+      type: object
+      properties:
+        book_id:
+          type: integer
+        book_name:
+          type: string
+        author_id:
+          type: [integer, "null"]
+        author_name:
+          type: string
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+        matched_from:
+          type: string
+          enum: [search_meta]
+      required: [book_id, book_name, author_id, author_name, score, matched_from]
+    BookSearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookSearchItem"
+      required: [query, results]
+    TextSearchResult:
+      type: object
+      properties:
+        book_id:
+          type: [integer, "null"]
+        author_id:
+          type: [integer, "null"]
+        book_name:
+          type: [string, "null"]
+        author_name:
+          type: [string, "null"]
+        page:
+          type: [integer, "null"]
+        page_id:
+          type: [integer, "null"]
+        vol:
+          type: [string, "null"]
+        headings:
+          type: array
+          items:
+            type: string
+        snip:
+          type: string
+        text:
+          type: string
+      required:
+        - book_id
+        - author_id
+        - book_name
+        - author_name
+        - page
+        - page_id
+        - vol
+        - headings
+        - snip
+        - text
+    TextSearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        page:
+          type: integer
+        count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/TextSearchResult"
+      required: [query, page, count, results]
+    BookPageResponse:
+      type: object
+      properties:
+        book_id:
+          type: integer
+        page:
+          type: integer
+        meta:
+          type: object
+          properties:
+            note:
+              type: string
+              description: Optional metadata note
+        meta_raw:
+          type: string
+        text:
+          type: string
+      required: [book_id, page, text]
     IndexTopResponse:
       type: object
       properties:
-        book_id: { type: integer }
-        max_level: { type: integer }
+        book_id:
+          type: integer
+        max_level:
+          type: integer
         results:
           type: array
-          items: { $ref: "#/components/schemas/Heading" }
+          items:
+            $ref: "#/components/schemas/Heading"
       required: [book_id, max_level, results]
     IndexSearchResult:
       allOf:
         - $ref: "#/components/schemas/Heading"
         - type: object
           properties:
-            score: { type: number }
+            score:
+              type: number
+              minimum: 0
+              maximum: 1
           required: [score]
     IndexSearchResponse:
       type: object
       properties:
-        book_id: { type: integer }
-        query: { type: string }
+        book_id:
+          type: integer
+        query:
+          type: string
         results:
           type: array
-          items: { $ref: "#/components/schemas/IndexSearchResult" }
+          items:
+            $ref: "#/components/schemas/IndexSearchResult"
       required: [book_id, query, results]
     IndexChunkResponse:
       type: object
       properties:
-        book_id: { type: integer }
-        offset: { type: integer }
-        limit: { type: integer }
-        has_more: { type: boolean }
+        book_id:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+        has_more:
+          type: boolean
         next_offset:
           type: [integer, "null"]
         results:
           type: array
-          items: { $ref: "#/components/schemas/Heading" }
-      required: [book_id, offset, limit, has_more, results]
+          items:
+            $ref: "#/components/schemas/Heading"
+      required: [book_id, offset, limit, has_more, next_offset, results]
     IndexWindowResponse:
       type: object
       properties:
-        book_id: { type: integer }
-        page: { type: integer }
+        book_id:
+          type: integer
+        page:
+          type: integer
         current:
           anyOf:
-            - { $ref: "#/components/schemas/Heading" }
-            - { type: "null" }
+            - $ref: "#/components/schemas/Heading"
+            - type: "null"
         before:
           type: array
-          items: { $ref: "#/components/schemas/Heading" }
+          items:
+            $ref: "#/components/schemas/Heading"
         after:
           type: array
-          items: { $ref: "#/components/schemas/Heading" }
-      required: [book_id, page, before, after]
+          items:
+            $ref: "#/components/schemas/Heading"
+      required: [book_id, page, current, before, after]
+    AuthorResponse:
+      type: object
+      properties:
+        id:
+          type: [integer, "null"]
+        name:
+          type: [string, "null"]
+        note:
+          type: string
+          description: Upstream payload may include extra fields; inspect full object at runtime
+      required: [note]

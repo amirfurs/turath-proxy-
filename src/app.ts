@@ -10,6 +10,11 @@ import { UpstreamError } from "./turath/client.js";
 export const buildApp = (): FastifyInstance => {
   const app = Fastify({ logger: true });
 
+  app.addHook("onRequest", (req, _reply, done) => {
+    req.raw.url = req.raw.url?.replace(/^\/{2,}/, "/") ?? req.raw.url;
+    done();
+  });
+
   app.register(healthRoutes);
   app.register(booksRoutes);
   app.register(searchRoutes);
